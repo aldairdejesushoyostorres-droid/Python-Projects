@@ -1,4 +1,7 @@
 import statistics
+from data_manager import save_to_json, load_from_json
+from utils import search_students
+
 
 class Student:
     def __init__(self, name, grades=None):
@@ -146,6 +149,29 @@ class GradeAnalyzer:
                     )
 
         print(f"CSV report exported to {filename}")
+    
+    def export_json(self):
+        filename = "students_data.json"
+        save_to_json(filename, self.students)
+
+    def import_json(self):
+        filename = "students_data.json"
+        data = load_from_json(filename, Student)
+
+        if data is not None:
+            self.students = data
+
+    def search_student(self):
+        query = input("Search student by name: ").strip()
+
+        matches = search_students(query, self.students)
+
+        if not matches:
+            print("No matches found.")
+        else:
+            print("\nMatching students:")
+            for m in matches:
+                print(f"- {m}")
 
 
     def main_menu(self):
@@ -161,7 +187,11 @@ STUDENT GRADE ANALYZER
 6. Show all students
 7. Export report to file
 8. Export report to CSV
-9. Exit
+9. Search student
+10. Export all data to JSON
+11. Import all data from JSON
+12. Exit
+
 """)
 
             choice = input("Choose an option: ").strip()
@@ -180,11 +210,17 @@ STUDENT GRADE ANALYZER
                 self.show_all_students()
             elif choice == "7":
                 self.export_report()
-            elif choice == "9":
+            elif choice == "12":
                 print("Goodbye!")
                 break
             elif choice == "8":
                 self.export_report_csv()
+            elif choice == "9":
+                self.search_student()
+            elif choice == "10":
+                self.export_json()
+            elif choice == "11":
+                self.import_json()
             else:
                 print("Invalid option. Try again.")
 
