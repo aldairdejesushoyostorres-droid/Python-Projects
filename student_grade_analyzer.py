@@ -128,16 +128,13 @@ class GradeAnalyzer:
     def export_report_csv(self):
         filename = "grade_report.csv"
         with open(filename, "w") as f:
-            # Header row
             f.write("name,grade,average,highest,lowest,median\n")
 
             for student in self.students.values():
-                # If the student has no grades, at least one row should still appear
                 if not student.grades:
                     f.write(f"{student.name},,,,\n")
                     continue
 
-                # Write one row per grade (useful for ML datasets)
                 for g in student.grades:
                     f.write(
                         f"{student.name},"
@@ -149,7 +146,7 @@ class GradeAnalyzer:
                     )
 
         print(f"CSV report exported to {filename}")
-    
+
     def export_json(self):
         filename = "students_data.json"
         save_to_json(filename, self.students)
@@ -157,13 +154,11 @@ class GradeAnalyzer:
     def import_json(self):
         filename = "students_data.json"
         data = load_from_json(filename, Student)
-
         if data is not None:
             self.students = data
 
     def search_student(self):
         query = input("Search student by name: ").strip()
-
         matches = search_students(query, self.students)
 
         if not matches:
@@ -172,7 +167,6 @@ class GradeAnalyzer:
             print("\nMatching students:")
             for m in matches:
                 print(f"- {m}")
-
 
     def main_menu(self):
         while True:
@@ -185,13 +179,12 @@ STUDENT GRADE ANALYZER
 4. Remove student
 5. Show statistics for a student
 6. Show all students
-7. Export report to file
+7. Export report to text
 8. Export report to CSV
 9. Search student
 10. Export all data to JSON
 11. Import all data from JSON
 12. Exit
-
 """)
 
             choice = input("Choose an option: ").strip()
@@ -210,9 +203,6 @@ STUDENT GRADE ANALYZER
                 self.show_all_students()
             elif choice == "7":
                 self.export_report()
-            elif choice == "12":
-                print("Goodbye!")
-                break
             elif choice == "8":
                 self.export_report_csv()
             elif choice == "9":
@@ -221,6 +211,9 @@ STUDENT GRADE ANALYZER
                 self.export_json()
             elif choice == "11":
                 self.import_json()
+            elif choice == "12":
+                print("Goodbye!")
+                break
             else:
                 print("Invalid option. Try again.")
 
