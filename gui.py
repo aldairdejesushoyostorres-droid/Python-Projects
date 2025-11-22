@@ -1,19 +1,18 @@
+# gui.py
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from student_grade_analyzer import GradeAnalyzer, Student
+import json
 import os
 
-# ---------------------------
-# Helper UI dialogs
-# ---------------------------
+# ---------- Helper dialogs ----------
+def ask_string(title, prompt, parent=None, initialvalue=""):
+    return simpledialog.askstring(title, prompt, parent=parent, initialvalue=initialvalue)
 
-def ask_string(title, prompt, parent=None):
-    return simpledialog.askstring(title, prompt, parent=parent)
-
-def ask_float(title, prompt, parent=None):
-    s = simpledialog.askstring(title, prompt, parent=parent)
+def ask_float(title, prompt, parent=None, initialvalue=""):
+    s = simpledialog.askstring(title, prompt, parent=parent, initialvalue=initialvalue)
     if s is None:
         return None
     try:
@@ -21,184 +20,174 @@ def ask_float(title, prompt, parent=None):
     except ValueError:
         return None
 
-# ---------------------------
-# Main GUI Application
-# ---------------------------
-
+# ---------- GUI App ----------
 class GradeAnalyzerGUI:
     def __init__(self, root):
-        # backend analyzer instance
         self.analyzer = GradeAnalyzer()
 
-        # auto-load existing data (if any)
-        # GradeAnalyzer.import_json() uses the data_manager loader
+        # Auto-load on start (silent)
         try:
-            # call the method that loads from default filename
             self.analyzer.import_json()
         except Exception:
-            # safe guard in case import_json not present or fails
+            # If import_json fails for some reason, ignore and continue with empty dataset
             pass
 
-        # setup UI
         self.root = root
-        self.root.title("Student Grade Analyzer")
-        self.root.geometry("900x540")
+        self.root.title("Student Grade Analyzer — Phase 3")
+        self.root.geometry("1000x600")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_quit)  # ensure autosave on close
 
-        # layout frames (left: list, right: details + buttons)
-        self.left_frame = ttk.Frame(self.root, padding=(10, 10, 5, 10))
-        self.left_frame.pack(side=LEFT, fill=BOTH, expand=False)
+        # Layout frames
+        self.top_frame = ttk.Frame(self.root, padding=8)
+        self.top_frame.pack(side=TOP, fill=X)
 
-        self.right_frame = ttk.Frame(self.root, padding=(5, 10, 10, 10))
-        self.right_frame.pack(side=RIGHT, fill=BOTH, expand=True)
+        self.main_frame = ttk.Frame(self.root, padding=(8, 0, 8, 8))
+        self.main_frame.pack(side=TOP, fill=BOTH, expand=True)
 
-        self._build_left()
-        self._build_right()
-        self._build_bottom_buttons()
+        self._build_top_bar()
+        self._build_main_panes()
+        self._build_action_buttons()
 
-        # Populate list
         self.refresh_student_list()
 
-    # ---------------------------
-    # Left: student list (Treeview)
-    # ---------------------------
-    def _build_left(self):
-        lbl = ttk.Label(self.left_frame, text="Students", font=("Segoe UI", 12, "bold"))
-        lbl.pack(anchor="w")
+    # ---------- Top bar (search + global actions) ----------
+    def _build_top_bar(self):
+        lbl = ttk.Label(self.top_frame, text="Search:", font=("Segoe UI", 10))
+        lbl.pack(side=LEFT, padx=(2, 6))
 
-        cols = ("name", "average", "count")
-        self.tree = ttk.Treeview(self.left_frame, columns=cols, show="headings", height=20)
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(self.top_frame, textvariable=self.search_var)
+        search_entry.pack(side=LEFT, fill=X, expand=True)
+        search_entry.bind("<KeyRelease>", lambda e: self.on_search_live())
+
+        clear_btn = ttk.Button(self.top_frame, text="Clear", command=self.on_clear_search)
+        clear_btn.pack(side=LEFT, padx=6)
+
+        export_btn = ttk.Button(self.top_frame, text="Export (choose file...)", command=self.on_export_dialog)
+        export_btn.pack(side=LEFT, padx=(12, 0))
+
+    # ---------- Main panes ----------
+    def _build_main_panes(self):
+        # Left: student list
+        left = ttk.Frame(self.main_frame)
+        left.pack(side=LEFT, fill=BOTH, expand=False)
+
+        ttk.Label(left, text="Students", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+
+        columns = ("name", "average", "count")
+        self.tree = ttk.Treeview(left, columns=columns, show="headings", height=26)
         self.tree.heading("name", text="Name")
         self.tree.heading("average", text="Average")
         self.tree.heading("count", text="#Grades")
-        self.tree.column("name", width=200, anchor="w")
+        self.tree.column("name", width=260, anchor="w")
         self.tree.column("average", width=80, anchor="center")
-        self.tree.column("count", width=60, anchor="center")
-        self.tree.pack(fill=BOTH, expand=True)
+        self.tree.column("count", width=80, anchor="center")
 
-        # bind selection
+        vsb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side=LEFT, fill=BOTH, expand=True)
+        vsb.pack(side=LEFT, fill=Y)
+
         self.tree.bind("<<TreeviewSelect>>", self.on_student_selected)
+        self.tree.bind("<Double-1>", self.on_student_double_click)
 
-        # small search box above list
-        search_frame = ttk.Frame(self.left_frame)
-        search_frame.pack(fill="x", pady=(8, 0))
-        self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
-        search_entry.pack(side=LEFT, fill="x", expand=True)
-        search_button = ttk.Button(search_frame, text="Search", command=self.on_search)
-        search_button.pack(side=LEFT, padx=(6, 0))
+        # Right: details & grade management
+        right = ttk.Frame(self.main_frame)
+        right.pack(side=RIGHT, fill=BOTH, expand=True)
 
-    # ---------------------------
-    # Right: details panel
-    # ---------------------------
-    def _build_right(self):
-        title = ttk.Label(self.right_frame, text="Student Details", font=("Segoe UI", 12, "bold"))
-        title.pack(anchor="w")
+        ttk.Label(right, text="Details", font=("Segoe UI", 12, "bold")).pack(anchor="w")
 
-        # grades list
-        self.grades_listbox = tk.Listbox(self.right_frame, height=12)
-        self.grades_listbox.pack(fill="x", pady=(8, 6))
+        # Student name label
+        self.selected_name_var = tk.StringVar(value="No student selected")
+        self.selected_name_lbl = ttk.Label(right, textvariable=self.selected_name_var, font=("Segoe UI", 11, "bold"))
+        self.selected_name_lbl.pack(anchor="w", pady=(6, 4))
 
-        # stats
-        stats_frame = ttk.Frame(self.right_frame)
-        stats_frame.pack(fill="x")
+        # Grades listbox with scrollbar
+        grades_frame = ttk.Frame(right)
+        grades_frame.pack(fill=X, pady=(4, 6))
+
+        self.grades_listbox = tk.Listbox(grades_frame, height=12, activestyle="none", exportselection=False)
+        self.grades_listbox.pack(side=LEFT, fill=BOTH, expand=True)
+
+        g_vsb = ttk.Scrollbar(grades_frame, orient="vertical", command=self.grades_listbox.yview)
+        self.grades_listbox.configure(yscrollcommand=g_vsb.set)
+        g_vsb.pack(side=LEFT, fill=Y)
+
+        # Buttons for grade actions
+        grade_btns = ttk.Frame(right)
+        grade_btns.pack(fill=X, pady=(6, 8))
+
+        add_grade_btn = ttk.Button(grade_btns, text="Add Grade", command=self.on_add_grade)
+        add_grade_btn.grid(row=0, column=0, padx=6, pady=4)
+
+        edit_grade_btn = ttk.Button(grade_btns, text="Edit Grade", command=self.on_edit_grade)
+        edit_grade_btn.grid(row=0, column=1, padx=6, pady=4)
+
+        del_grade_btn = ttk.Button(grade_btns, text="Delete Grade", command=self.on_delete_grade, bootstyle="danger")
+        del_grade_btn.grid(row=0, column=2, padx=6, pady=4)
+
+        # Statistics
+        stats_frame = ttk.Frame(right)
+        stats_frame.pack(fill=X, pady=(8, 4))
 
         self.avg_lbl = ttk.Label(stats_frame, text="Average: -")
         self.avg_lbl.pack(anchor="w")
-
         self.high_lbl = ttk.Label(stats_frame, text="Highest: -")
         self.high_lbl.pack(anchor="w")
-
         self.low_lbl = ttk.Label(stats_frame, text="Lowest: -")
         self.low_lbl.pack(anchor="w")
-
         self.med_lbl = ttk.Label(stats_frame, text="Median: -")
         self.med_lbl.pack(anchor="w")
 
-    # ---------------------------
-    # Bottom buttons
-    # ---------------------------
-    def _build_bottom_buttons(self):
-        btn_frame = ttk.Frame(self.right_frame, padding=(0, 12, 0, 0))
-        btn_frame.pack(fill="x", side=BOTTOM)
+    # ---------- Bottom action buttons ----------
+    def _build_action_buttons(self):
+        btn_bar = ttk.Frame(self.root, padding=(8, 8))
+        btn_bar.pack(side=BOTTOM, fill=X)
 
-        add_btn = ttk.Button(btn_frame, text="Add Student", bootstyle="success", command=self.on_add_student)
-        add_btn.grid(row=0, column=0, padx=6, pady=6)
+        add_btn = ttk.Button(btn_bar, text="Add Student", bootstyle="success", command=self.on_add_student)
+        add_btn.pack(side=LEFT, padx=6)
 
-        remove_btn = ttk.Button(btn_frame, text="Remove Student", bootstyle="danger", command=self.on_remove_student)
-        remove_btn.grid(row=0, column=1, padx=6, pady=6)
+        rename_btn = ttk.Button(btn_bar, text="Rename Student", bootstyle="info", command=self.on_edit_name)
+        rename_btn.pack(side=LEFT, padx=6)
 
-        add_grade_btn = ttk.Button(btn_frame, text="Add Grade", bootstyle="primary", command=self.on_add_grade)
-        add_grade_btn.grid(row=0, column=2, padx=6, pady=6)
+        remove_btn = ttk.Button(btn_bar, text="Remove Student", bootstyle="danger", command=self.on_remove_student)
+        remove_btn.pack(side=LEFT, padx=6)
 
-        edit_name_btn = ttk.Button(btn_frame, text="Edit Name", bootstyle="info", command=self.on_edit_name)
-        edit_name_btn.grid(row=0, column=3, padx=6, pady=6)
+        export_txt_btn = ttk.Button(btn_bar, text="Export TXT", bootstyle="secondary", command=self.on_export_txt)
+        export_txt_btn.pack(side=LEFT, padx=6)
 
-        export_txt_btn = ttk.Button(btn_frame, text="Export TXT", bootstyle="secondary", command=self.on_export_txt)
-        export_txt_btn.grid(row=1, column=0, padx=6, pady=6)
+        export_csv_btn = ttk.Button(btn_bar, text="Export CSV", bootstyle="secondary", command=self.on_export_csv)
+        export_csv_btn.pack(side=LEFT, padx=6)
 
-        export_csv_btn = ttk.Button(btn_frame, text="Export CSV", bootstyle="secondary", command=self.on_export_csv)
-        export_csv_btn.grid(row=1, column=1, padx=6, pady=6)
+        refresh_btn = ttk.Button(btn_bar, text="Refresh", bootstyle="light", command=self.refresh_student_list)
+        refresh_btn.pack(side=RIGHT, padx=6)
 
-        refresh_btn = ttk.Button(btn_frame, text="Refresh", bootstyle="light", command=self.refresh_student_list)
-        refresh_btn.grid(row=1, column=2, padx=6, pady=6)
-
-        quit_btn = ttk.Button(btn_frame, text="Quit", bootstyle="danger-outline", command=self.on_quit)
-        quit_btn.grid(row=1, column=3, padx=6, pady=6)
-
-    # ---------------------------
-    # Events & Actions
-    # ---------------------------
+    # ---------- Data & UI sync ----------
     def refresh_student_list(self, filter_query=None):
-        # Clear tree
+        # clear tree
         for r in self.tree.get_children():
             self.tree.delete(r)
 
-        # Re-populate
         students = self.analyzer.students
         keys = sorted(students.keys(), key=lambda n: n.lower())
         for name in keys:
-            if filter_query:
-                if filter_query.lower() not in name.lower():
-                    continue
+            if filter_query and filter_query.lower() not in name.lower():
+                continue
             s = students[name]
-            avg = f"{s.average():.2f}" if s.grades else "-"
+            avg_str = f"{s.average():.2f}" if s.grades else "-"
             count = len(s.grades)
-            self.tree.insert("", "end", iid=name, values=(name, avg, count))
+            self.tree.insert("", "end", iid=name, values=(name, avg_str, count))
 
         # clear right panel
         self.clear_details()
 
     def clear_details(self):
+        self.selected_name_var.set("No student selected")
         self.grades_listbox.delete(0, tk.END)
         self.avg_lbl.config(text="Average: -")
         self.high_lbl.config(text="Highest: -")
         self.low_lbl.config(text="Lowest: -")
         self.med_lbl.config(text="Median: -")
-
-    def on_student_selected(self, event):
-        sel = self.tree.selection()
-        if not sel:
-            self.clear_details()
-            return
-        name = sel[0]
-        self.show_student_details(name)
-
-    def show_student_details(self, name):
-        student = self.analyzer.students.get(name)
-        if not student:
-            self.clear_details()
-            return
-
-        # update grades listbox
-        self.grades_listbox.delete(0, tk.END)
-        for i, g in enumerate(student.grades, start=1):
-            self.grades_listbox.insert(tk.END, f"{i}. {g}")
-
-        # update stats
-        self.avg_lbl.config(text=f"Average: {student.average():.2f}" if student.grades else "Average: -")
-        self.high_lbl.config(text=f"Highest: {student.highest()}" if student.grades else "Highest: -")
-        self.low_lbl.config(text=f"Lowest: {student.lowest()}" if student.grades else "Lowest: -")
-        self.med_lbl.config(text=f"Median: {student.median()}" if student.grades else "Median: -")
 
     def get_selected_student_name(self):
         sel = self.tree.selection()
@@ -206,84 +195,77 @@ class GradeAnalyzerGUI:
             return None
         return sel[0]
 
-    # ---------------------------
-    # Button handlers
-    # ---------------------------
+    # ---------- Event handlers ----------
+    def on_search_live(self):
+        q = self.search_var.get().strip()
+        if not q:
+            self.refresh_student_list()
+        else:
+            self.refresh_student_list(filter_query=q)
+
+    def on_clear_search(self):
+        self.search_var.set("")
+        self.refresh_student_list()
+
+    def on_student_selected(self, event):
+        name = self.get_selected_student_name()
+        if name:
+            self.show_student_details(name)
+
+    def on_student_double_click(self, event):
+        # double click toggles show or edit? we'll show details (already done by select)
+        name = self.get_selected_student_name()
+        if name:
+            self.show_student_details(name)
+
+    def show_student_details(self, name):
+        student = self.analyzer.students.get(name)
+        if not student:
+            self.clear_details()
+            return
+
+        self.selected_name_var.set(student.name)
+        self.grades_listbox.delete(0, tk.END)
+        for i, g in enumerate(student.grades, start=1):
+            self.grades_listbox.insert(tk.END, f"{i}. {g}")
+
+        if student.grades:
+            self.avg_lbl.config(text=f"Average: {student.average():.2f}")
+            self.high_lbl.config(text=f"Highest: {student.highest()}")
+            self.low_lbl.config(text=f"Lowest: {student.lowest()}")
+            self.med_lbl.config(text=f"Median: {student.median()}")
+        else:
+            self.avg_lbl.config(text="Average: -")
+            self.high_lbl.config(text="Highest: -")
+            self.low_lbl.config(text="Lowest: -")
+            self.med_lbl.config(text="Median: -")
+
+    # ---------- CRUD operations ----------
     def on_add_student(self):
         name = ask_string("Add Student", "Student name:", parent=self.root)
-        if not name:
+        if name is None:
             return
         name = name.strip()
         if not name:
             messagebox.showwarning("Invalid", "Name cannot be empty.")
             return
         if name in self.analyzer.students:
-            messagebox.showwarning("Already exists", "A student with that name already exists.")
+            messagebox.showwarning("Exists", "Student already exists.")
             return
-        # add using backend structure and autosave
         self.analyzer.students[name] = Student(name)
-        try:
-            self.analyzer.autosave()
-        except Exception:
-            # fallback to calling export_json if autosave not defined
-            try:
-                self.analyzer.export_json()
-            except Exception:
-                pass
+        self._autosave()
         self.refresh_student_list()
-
-    def on_remove_student(self):
-        name = self.get_selected_student_name()
-        if not name:
-            messagebox.showinfo("Select student", "Please select a student to remove.")
-            return
-        confirm = messagebox.askyesno("Confirm", f"Are you sure you want to remove '{name}'?")
-        if not confirm:
-            return
-        self.analyzer.students.pop(name, None)
-        # save
-        try:
-            self.analyzer.autosave()
-        except Exception:
-            try:
-                self.analyzer.export_json()
-            except Exception:
-                pass
-        self.refresh_student_list()
-
-    def on_add_grade(self):
-        name = self.get_selected_student_name()
-        if not name:
-            messagebox.showinfo("Select student", "Please select a student to add a grade.")
-            return
-        g = ask_float("Add Grade", f"Enter grade for {name} (0-100):", parent=self.root)
-        if g is None:
-            return
-        if g < 0 or g > 100:
-            messagebox.showwarning("Invalid", "Grade must be between 0 and 100.")
-            return
-        student = self.analyzer.students.get(name)
-        if student is None:
-            return
-        student.add_grade(g)
-        # save
-        try:
-            self.analyzer.autosave()
-        except Exception:
-            try:
-                self.analyzer.export_json()
-            except Exception:
-                pass
-        self.show_student_details(name)
-        self.refresh_student_list()
+        # select the new student
+        self.tree.selection_set(name)
+        self.tree.see(name)
 
     def on_edit_name(self):
         name = self.get_selected_student_name()
         if not name:
-            messagebox.showinfo("Select student", "Please select a student to rename.")
+            messagebox.showinfo("Select", "Select a student first.")
             return
-        new_name = ask_string("Edit Name", f"Enter new name for '{name}':", parent=self.root)
-        if not new_name:
+        new_name = ask_string("Rename Student", f"New name for '{name}':", parent=self.root, initialvalue=name)
+        if new_name is None:
             return
         new_name = new_name.strip()
         if not new_name:
@@ -292,58 +274,183 @@ class GradeAnalyzerGUI:
         if new_name in self.analyzer.students:
             messagebox.showwarning("Conflict", "Another student already uses this name.")
             return
-        # rename
         self.analyzer.students[new_name] = self.analyzer.students.pop(name)
         self.analyzer.students[new_name].name = new_name
-        # save
-        try:
-            self.analyzer.autosave()
-        except Exception:
-            try:
-                self.analyzer.export_json()
-            except Exception:
-                pass
+        self._autosave()
+        self.refresh_student_list()
+        self.tree.selection_set(new_name)
+        self.tree.see(new_name)
+
+    def on_remove_student(self):
+        name = self.get_selected_student_name()
+        if not name:
+            messagebox.showinfo("Select", "Select a student first.")
+            return
+        answer = messagebox.askyesno("Confirm", f"Are you sure you want to remove '{name}'?")
+        if not answer:
+            return
+        self.analyzer.students.pop(name, None)
+        self._autosave()
         self.refresh_student_list()
 
+    # ---------- Grade operations with modal popups (Option A) ----------
+    def on_add_grade(self):
+        name = self.get_selected_student_name()
+        if not name:
+            messagebox.showinfo("Select", "Select a student first.")
+            return
+        value = ask_float("Add Grade", f"Enter grade for {name} (0-100):", parent=self.root)
+        if value is None:
+            return
+        if not (0 <= value <= 100):
+            messagebox.showwarning("Invalid", "Grade must be between 0 and 100.")
+            return
+        student = self.analyzer.students.get(name)
+        if student is None:
+            messagebox.showerror("Error", "Selected student not found.")
+            return
+        student.add_grade(value)
+        self._autosave()
+        self.show_student_details(name)
+        self.refresh_student_list()
+
+    def on_edit_grade(self):
+        name = self.get_selected_student_name()
+        if not name:
+            messagebox.showinfo("Select", "Select a student and a grade first.")
+            return
+        idx = self.grades_listbox.curselection()
+        if not idx:
+            messagebox.showinfo("Select", "Select a grade from the list to edit.")
+            return
+        sel_index = idx[0]  # listbox index
+        student = self.analyzer.students.get(name)
+        if student is None:
+            messagebox.showerror("Error", "Selected student not found.")
+            return
+        current_value = student.grades[sel_index]
+        new_value = ask_float("Edit Grade", f"Edit grade (0-100) for {name}:", parent=self.root, initialvalue=str(current_value))
+        if new_value is None:
+            return
+        if not (0 <= new_value <= 100):
+            messagebox.showwarning("Invalid", "Grade must be between 0 and 100.")
+            return
+        student.grades[sel_index] = new_value
+        self._autosave()
+        self.show_student_details(name)
+        self.refresh_student_list()
+        # re-select edited grade
+        self.grades_listbox.selection_clear(0, tk.END)
+        self.grades_listbox.selection_set(sel_index)
+        self.grades_listbox.see(sel_index)
+
+    def on_delete_grade(self):
+        name = self.get_selected_student_name()
+        if not name:
+            messagebox.showinfo("Select", "Select a student and a grade first.")
+            return
+        idx = self.grades_listbox.curselection()
+        if not idx:
+            messagebox.showinfo("Select", "Select a grade from the list to delete.")
+            return
+        sel_index = idx[0]
+        student = self.analyzer.students.get(name)
+        if student is None:
+            messagebox.showerror("Error", "Selected student not found.")
+            return
+        confirm = messagebox.askyesno("Confirm", f"Delete grade #{sel_index+1} ({student.grades[sel_index]}) for {name}?")
+        if not confirm:
+            return
+        student.grades.pop(sel_index)
+        self._autosave()
+        self.show_student_details(name)
+        self.refresh_student_list()
+
+    # ---------- Exports ----------
     def on_export_txt(self):
-        # call backend export_report
         try:
-            self.analyzer.export_report()
-            messagebox.showinfo("Export", "Text report exported successfully.")
+            # let user choose path
+            fname = filedialog.asksaveasfilename(title="Save text report", defaultextension=".txt", filetypes=[("Text files","*.txt"),("All files","*.*")])
+            if not fname:
+                return
+            # temporarily call export_report but write to chosen file
+            content_lines = []
+            content_lines.append("STUDENT GRADE REPORT")
+            content_lines.append("====================")
+            content_lines.append("")
+            for student in self.analyzer.students.values():
+                content_lines.append(f"Name: {student.name}")
+                content_lines.append(f"Grades: {student.grades}")
+                content_lines.append(f"Average: {student.average():.2f}")
+                content_lines.append(f"Highest: {student.highest()}")
+                content_lines.append(f"Lowest: {student.lowest()}")
+                content_lines.append(f"Median: {student.median()}")
+                content_lines.append("-" * 30)
+            with open(fname, "w") as fh:
+                fh.write("\n".join(content_lines))
+            messagebox.showinfo("Export", f"Text report saved to:\n{fname}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed: {e}")
+            messagebox.showerror("Export Error", str(e))
 
     def on_export_csv(self):
         try:
-            self.analyzer.export_report_csv()
-            messagebox.showinfo("Export", "CSV report exported successfully.")
+            fname = filedialog.asksaveasfilename(title="Save CSV report", defaultextension=".csv", filetypes=[("CSV files","*.csv"),("All files","*.*")])
+            if not fname:
+                return
+            # write CSV similar to export_report_csv but to chosen filename
+            with open(fname, "w") as f:
+                f.write("name,grade,average,highest,lowest,median\n")
+                for student in self.analyzer.students.values():
+                    if not student.grades:
+                        f.write(f"{student.name},,,,\n")
+                        continue
+                    for g in student.grades:
+                        f.write(
+                            f"{student.name},"
+                            f"{g},"
+                            f"{student.average():.2f},"
+                            f"{student.highest()},"
+                            f"{student.lowest()},"
+                            f"{student.median()}\n"
+                        )
+            messagebox.showinfo("Export", f"CSV report saved to:\n{fname}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed: {e}")
+            messagebox.showerror("Export Error", str(e))
 
-    def on_search(self):
-        q = self.search_var.get().strip()
-        if not q:
-            self.refresh_student_list()
-            return
-        # filter and refresh
-        self.refresh_student_list(filter_query=q)
+    def on_export_dialog(self):
+        # small chooser to pick txt or csv (user friendly)
+        choice = messagebox.askquestion("Export", "Export as CSV? (No = TXT)")
+        if choice == "yes":
+            self.on_export_csv()
+        else:
+            self.on_export_txt()
 
-    def on_quit(self):
-        # final autosave
+    # ---------- Autosave helper ----------
+    def _autosave(self):
+        # tries analyzer.autosave() then falls back to export_json()
         try:
-            self.analyzer.autosave()
+            # method used earlier in backend
+            if hasattr(self.analyzer, "autosave"):
+                self.analyzer.autosave()
+            else:
+                self.analyzer.export_json()
         except Exception:
+            # best-effort fallback: attempt save_to_json from data_manager if exists
             try:
                 self.analyzer.export_json()
             except Exception:
+                # last resort: silently ignore but alert user when quitting if needed
                 pass
-        self.root.quit()
 
-# ---------------------------
-# Run the app
-# ---------------------------
+    # ---------- Quit handler ----------
+    def on_quit(self):
+        # final autosave
+        self._autosave()
+        self.root.destroy()
+
+# ---------- Run ----------
 def main():
-    root = tb.Window(themename="litera")  # choose a theme you like
+    root = tb.Window(themename="litera")  # change theme if you like
     app = GradeAnalyzerGUI(root)
     root.mainloop()
 
