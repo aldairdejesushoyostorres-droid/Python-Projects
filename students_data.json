@@ -2,43 +2,100 @@
     "students": [
         {
             "name": "Alice Johnson",
-            "grades": [89, 92, 75, 88, 95]
+            "grades": [
+                89,
+                92,
+                75,
+                88,
+                95
+            ]
         },
         {
             "name": "Carlos Medina",
-            "grades": [70, 72, 65, 80]
+            "grades": [
+                70,
+                72,
+                65,
+                80
+            ]
         },
         {
             "name": "Sophie Laurent",
-            "grades": [95, 98, 100, 92]
+            "grades": [
+                95,
+                98,
+                100,
+                92
+            ]
         },
         {
             "name": "Jun Park",
-            "grades": [60, 68, 72]
+            "grades": [
+                60,
+                68,
+                72
+            ]
         },
         {
             "name": "Maria Rodriguez",
-            "grades": [85, 87, 90]
+            "grades": [
+                85,
+                87,
+                90
+            ]
         },
         {
             "name": "David Wilson",
-            "grades": [50, 55, 60, 65]
+            "grades": [
+                50,
+                55,
+                60,
+                65
+            ]
         },
         {
             "name": "Emma Thompson",
-            "grades": [99, 97, 96, 95, 94]
+            "grades": [
+                99,
+                97,
+                96,
+                95,
+                94
+            ]
         },
         {
             "name": "Liam Nguyen",
-            "grades": [78, 82, 79, 85]
+            "grades": [
+                78,
+                82,
+                79,
+                85
+            ]
         },
         {
             "name": "Olivia Brown",
-            "grades": [88, 91]
+            "grades": [
+                88,
+                91
+            ]
         },
         {
-            "name": "Thomas Müller",
-            "grades": [73, 76, 80, 78]
+            "name": "Thomas M\u00fcller",
+            "grades": [
+                73,
+                76,
+                80,
+                78
+            ]
+        },
+        {
+            "name": "Aldair Hoyos",
+            "grades": [
+                95.0,
+                94.0,
+                93.0,
+                98.0
+            ]
         }
     ]
 }

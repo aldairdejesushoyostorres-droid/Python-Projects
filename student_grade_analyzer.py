@@ -30,6 +30,10 @@ class Student:
 class GradeAnalyzer:
     def __init__(self):
         self.students = {}
+    
+    def autosave(self):
+        save_to_json("students_data.json", self.students)
+
 
     def add_student(self):
         name = input("Enter student name: ").strip()
@@ -39,6 +43,7 @@ class GradeAnalyzer:
 
         self.students[name] = Student(name)
         print(f"Added student: {name}")
+        self.autosave()
 
     def add_grade_to_student(self):
         name = input("Enter student name: ").strip()
@@ -56,6 +61,8 @@ class GradeAnalyzer:
 
         self.students[name].add_grade(grade)
         print(f"Added grade {grade} to {name}")
+        self.autosave()
+
 
     def update_student_name(self):
         old_name = input("Enter current name: ").strip()
@@ -71,6 +78,8 @@ class GradeAnalyzer:
         self.students[new_name] = self.students.pop(old_name)
         self.students[new_name].name = new_name
         print(f"Updated name to {new_name}")
+        self.autosave()
+
 
     def remove_student(self):
         name = input("Enter student name to remove: ").strip()
@@ -80,6 +89,8 @@ class GradeAnalyzer:
 
         del self.students[name]
         print(f"Removed student {name}")
+        self.autosave()
+
 
     def show_student_stats(self):
         name = input("Enter student name: ").strip()
@@ -220,4 +231,6 @@ STUDENT GRADE ANALYZER
 
 if __name__ == "__main__":
     app = GradeAnalyzer()
+    print("Loading existing data...")
+    app.import_json()   # <-- auto-load
     app.main_menu()
